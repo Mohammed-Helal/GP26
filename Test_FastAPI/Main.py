@@ -70,8 +70,8 @@ from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime
 
 # --- 1. إعدادات قاعدة البيانات (Database Configuration) ---
-DATABASE_URL = "sqlite:///./production.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = "postgresql://postgres:123456@localhost:5432/Test_db"
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
