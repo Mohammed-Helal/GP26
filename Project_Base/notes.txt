@@ -1,0 +1,19 @@
+pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic pyModbusTCP
+pip install paho-mqtt
+
+
+# الدخول إلى حساب مستخدم postgres الافتراضي
+sudo -i -u postgres
+
+# إنشاء مستخدم جديد للمشروع (سنسميه factory_user بكلمة مرور 1234)
+psql -c "CREATE USER factory_user WITH PASSWORD '1234';"
+
+# إنشاء قاعدة البيانات وإعطاء الصلاحيات للمستخدم
+psql -c "CREATE DATABASE smart_factory OWNER factory_user;"
+
+# الخروج من حساب postgres
+exit
+
+uvicorn main:app --reload
+
+http://127.0.0.1:8000/docs
