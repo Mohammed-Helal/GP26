@@ -1,0 +1,14 @@
+production.db
+production.db-shm
+production.db-wal
+bin/
+obj/
+.venv/
+TCP_Test.py
+Read_test.py
+GP Codes.sln
+get-pip.py
+CAM.py
+OPC_UA
+libs
+Camera_Photos

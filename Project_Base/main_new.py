@@ -8,12 +8,12 @@ from pymodbus.client import ModbusTcpClient
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
-# استيراد ملفاتك الخاصة
+# import files
 import models, schemas
 from database import engine, get_db, SessionLocal
 
 # ==========================================
-# 1. الإعدادات (Configurations)
+# (Configurations)
 # ==========================================
 PLC_IP = "192.168.1.200" 
 PLC_PORT = 502
@@ -24,22 +24,22 @@ OUTPUT_DIR = "banana_classifications"
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
-# متغيرات عالمية لإدارة الحالة
+# Global Variable
 active_session_id = None 
+current_operator_id = None
 plc_client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
 
 # ==========================================
-# 2. منطق الـ AI والـ PLC (الخلفية)
+# PLC and AI
 # ==========================================
 
 def run_ai_logic():
-    """هذه الدالة تعمل في Thread منفصل لمراقبة الحساس، عرض الكاميرا، وتشغيل الذكاء الاصطناعي"""
     global active_session_id
     from transformers import AutoImageProcessor, AutoModelForImageClassification
     
     print("🔄 Loading AI Model...")
     try:
-        # تحميل معالج الصور والموديل
+        # download model
         preprocessor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
         model = AutoModelForImageClassification.from_pretrained(MODEL_PATH)
         model.eval()
@@ -48,7 +48,7 @@ def run_ai_logic():
         print(f"❌ Error Loading Model: {e}")
         return
 
-    # فتح الكاميرا (تأكد من الرقم 0 أو 1 حسب جهازك)
+    # Open Cam
     cap = cv2.VideoCapture(0) 
     previous_sensor_value = None
 
@@ -60,20 +60,61 @@ def run_ai_logic():
             print("⚠️ Cannot read from camera")
             break
 
-        # --- عرض البث المباشر للعملية ---
+        # Live stream 
         cv2.imshow("System - Live Feed", frame)
-        
+
+        key = cv2.waitKey(1) & 0xFF
+
         try:
-            # قراءة الحساس من ريجستر 10 في الـ PLC (الزناد / Trigger)
+            # ==========================================
+            # Start session 
+            # ==========================================
+            start_response = plc_client.read_holding_registers(11, count=1)
+            if not start_response.isError():
+                start_value = start_response.registers[0]
+                if start_value == 1 and active_session_id is None and current_operator_id is None:
+                    db = SessionLocal()
+                    new_s = models.SystemSession(
+                        operator_id= current_operator_id,  
+                        start_time= datetime.now()
+                    )
+                    db.add(new_s)
+                    db.commit()
+                    db.refresh(new_s)
+                    active_session_id = new_s.id
+                    db.close()
+                    print(f"🆕 Auto Session Started: {active_session_id}")
+
+            # ==========================================
+            # Start session 
+            # ==========================================
+            stop_response = plc_client.read_holding_registers(12, count=1)
+            if not stop_response.isError():
+                stop_value = stop_response.registers[0]
+                if stop_value == 1 and active_session_id is not None:  # not None مش None
+                    db = SessionLocal()
+                    session = db.query(models.SystemSession).filter(
+                        models.SystemSession.id == active_session_id
+                    ).first()
+                    if session:
+                        session.end_time = datetime.now()
+                        db.commit()
+                    db.close()
+                    print(f"🏁 Session {active_session_id} Stopped.")
+                    active_session_id = None
+
+
+
+            # Trigger on register(10)
             response = plc_client.read_holding_registers(10, count=1)
             if not response.isError():
                 current_sensor_value = response.registers[0]
                 
-                # اكتشاف النبضة (الانتقال من 1 إلى 0)
-                if previous_sensor_value == 1 and current_sensor_value == 0:
+                # (0 ---> 1)
+                if (previous_sensor_value == 1 and current_sensor_value == 0) or (key == ord('a')):
                     print("⚡ Sensor Triggered! Classifying...")
                     
-                    # معالجة الصورة وتحليلها
+                    # processing and analyze the photo
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     img = Image.fromarray(rgb_frame)
                     inputs = preprocessor(images=img, return_tensors="pt")
@@ -103,9 +144,10 @@ def run_ai_logic():
                     )
                     db.add(new_insp)
                     db.commit()
+                    print(f"📊 Result Saved! ID: {new_insp.id} | Status: {label}")
                     db.close()
                     
-                    print(f"📊 Result: {label} | Confidence: {conf:.2f}%")
+                    # print(f"📊 Result: {label} | Confidence: {conf:.2f}%")
 
                     # إرسال الأوامر للـ PLC (سجل 0 للسليم، سجل 1 للتالف)
                     if label.lower() == "fresh":
@@ -116,12 +158,13 @@ def run_ai_logic():
                         print("❌ Command: REJECT")
 
                 previous_sensor_value = current_sensor_value
+
         except Exception as e:
-            # استمرار الحلقة رغم أخطاء الاتصال العابرة
+            # loop continue 
             pass
 
-        # إغلاق النافذة عند الضغط على q
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # (q) to exit from the cam 
+        if key == ord('q'):
             break
         
         time.sleep(0.05) 
@@ -160,20 +203,20 @@ app = FastAPI(title="Smart Factory Core API")
 
 @app.on_event("startup")
 def startup_event():
-    """تشغيل كل المكونات عند بدء السيرفر"""
+    """run Everything in the server"""
     print("\n🚀 Starting System Services...")
     
-    # 1. إنشاء الجداول
+    # 1. Create tables
     models.Base.metadata.create_all(bind=engine)
     print("✅ Database Tables Verified.")
 
-    # 2. الاتصال بالـ PLC
+    # 2. PLC comunication
     if plc_client.connect():
         print(f"✅ Connected to PLC at {PLC_IP}")
     else:
         print(f"❌ PLC Connection Failed at {PLC_IP}")
 
-    # 3. الاتصال بالـ MQTT
+    # 3. MQTT communication
     try:
         mqtt_c.connect(MQTT_BROKER, 1883)
         mqtt_c.loop_start()
@@ -181,7 +224,7 @@ def startup_event():
     except Exception as e:
         print(f"❌ MQTT Connection Failed: {e}")
 
-    # 4. تشغيل الـ AI في الخلفية
+    # 4.run ai model on the background
     Thread(target=run_ai_logic, daemon=True).start()
     print("✅ AI Logic Thread Started.")
 
@@ -199,9 +242,49 @@ def shutdown_event():
 def home():
     return {"status": "Online", "plc": plc_client.is_socket_open()}
 
+@app.post("/create-user")
+def create_user(username: str, password: str, role: str = "Operator", db: Session = Depends(get_db)):
+    new_user = models.User(
+        username=username,
+        password_hash=password,
+        access_role=role
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+@app.post("/login")
+def login(username: str, password: str, db: Session = Depends(get_db)):
+    global current_operator_id    
+    user = db.query(models.User).filter(
+        models.User.username == username,
+        models.User.password_hash == password
+    ).first()
+
+    if not user:
+        # raise HTTPException(status_code=401, detail="Wrong username or password")
+        print("Wrong username or password")
+
+    current_operator_id = user.id
+    return {"user_id": user.id, "username": user.username, "role": user.access_role}
+
 @app.post("/start-session")
 def start_session(operator_id: int, db: Session = Depends(get_db)):
     global active_session_id
+    
+    # Find operator or not 
+    user = db.query(models.User).filter(models.User.id == operator_id).first()
+    if not user:
+        # raise HTTPException(status_code=404, detail="Operator not found, please login first")
+        print("Operator not found, please login first")
+    
+    # Find session or not 
+    if active_session_id is not None:
+        # raise HTTPException(status_code=400, detail="A session is already running")
+        print("A session is already running")
+    
     new_s = models.SystemSession(operator_id=operator_id, start_time=datetime.now())
     db.add(new_s)
     db.commit()
@@ -209,6 +292,7 @@ def start_session(operator_id: int, db: Session = Depends(get_db)):
     active_session_id = new_s.id
     print(f"🆕 Session {active_session_id} Started.")
     return {"message": "Session Started", "session_id": active_session_id}
+
 
 @app.post("/stop-session")
 def stop_session(db: Session = Depends(get_db)):

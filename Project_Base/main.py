@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from pyModbusTCP.client import ModbusClient
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion # استيراد لتحديد إصدار MQTT
+from datetime import datetime
 
 # Import our custom modules
 import models
@@ -99,6 +100,30 @@ app = FastAPI(title="Smart Factory Core API with MQTT", lifespan=lifespan)
 @app.get("/")
 def read_root():
     return {"status": "API and MQTT Subscriber are running successfully"}
+
+active_session_id = None
+@app.post("/start-session")
+def start_session(operator_id: int, db: Session = Depends(get_db)):
+    global active_session_id
+    new_s = models.SystemSession(operator_id=operator_id, start_time=datetime.now())
+    db.add(new_s)
+    db.commit()
+    db.refresh(new_s)
+    active_session_id = new_s.id
+    print(f"🆕 Session {active_session_id} Started.")
+    return {"message": "Session Started", "session_id": active_session_id}
+
+@app.post("/create-user")
+def create_user(username: str, password: str, role: str = "Operator", db: Session = Depends(get_db)):
+    new_user = models.User(
+        username=username,
+        password_hash=password,  # في الـ production هتعمل hashing طبعاً
+        access_role=role
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 @app.post("/api/v1/inspections/result", response_model=schemas.InspectionResponse)
 def add_inspection_result(
