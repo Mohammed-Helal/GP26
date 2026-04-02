@@ -2,7 +2,7 @@ import json, os, cv2, torch, time
 from datetime import datetime
 from threading import Thread
 from PIL import Image
-from fastapi import FastAPI, Depends, BackgroundTasks
+from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from pymodbus.client import ModbusTcpClient
 import paho.mqtt.client as mqtt
@@ -63,7 +63,7 @@ def run_ai_logic():
         # Live stream 
         cv2.imshow("System - Live Feed", frame)
 
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(1) & 0xFF     
 
         try:
             # ==========================================
@@ -264,32 +264,64 @@ def login(username: str, password: str, db: Session = Depends(get_db)):
     ).first()
 
     if not user:
-        # raise HTTPException(status_code=401, detail="Wrong username or password")
-        print("Wrong username or password")
+        raise HTTPException(status_code=401, detail="Wrong username or password")  # ✅
 
     current_operator_id = user.id
     return {"user_id": user.id, "username": user.username, "role": user.access_role}
 
+@app.post("/logout")
+def logout():
+    global current_operator_id, active_session_id
+    
+    # لو في session شغالة، وقّفها الأول
+    if active_session_id is not None:
+        db = SessionLocal()
+        session = db.query(models.SystemSession).filter(
+            models.SystemSession.id == active_session_id
+        ).first()
+        if session:
+            session.end_time = datetime.now()
+            db.commit()
+        db.close()
+        print(f"🏁 Session {active_session_id} Stopped.")
+        active_session_id = None
+    
+    print(f"👋 Operator {current_operator_id} Logged Out.")
+    current_operator_id = None
+    
+    return {"message": "Logged out successfully"}
+
 @app.post("/start-session")
 def start_session(operator_id: int, db: Session = Depends(get_db)):
     global active_session_id
+
+    if current_operator_id is None:
+        raise HTTPException(status_code=401, detail="Please login first")
     
-    # Find operator or not 
+    if operator_id != current_operator_id:
+        raise HTTPException(status_code=403, detail="Operator ID does not match logged in user")
+    
     user = db.query(models.User).filter(models.User.id == operator_id).first()
     if not user:
-        # raise HTTPException(status_code=404, detail="Operator not found, please login first")
-        print("Operator not found, please login first")
+        raise HTTPException(status_code=404, detail="Operator not found")
     
-    # Find session or not 
+    # Sure no sessions work
     if active_session_id is not None:
-        # raise HTTPException(status_code=400, detail="A session is already running")
-        print("A session is already running")
+        raise HTTPException(status_code=400, detail="A session is already running")
     
     new_s = models.SystemSession(operator_id=operator_id, start_time=datetime.now())
     db.add(new_s)
     db.commit()
     db.refresh(new_s)
     active_session_id = new_s.id
+
+    try:
+        plc_client.write_register(11, 1)  # register 11 = start
+        print(f"✅ PLC Start Signal Sent.")
+    except Exception as e:
+        print(f"⚠️ PLC Signal Failed: {e}")
+
+
     print(f"🆕 Session {active_session_id} Started.")
     return {"message": "Session Started", "session_id": active_session_id}
 
@@ -297,10 +329,33 @@ def start_session(operator_id: int, db: Session = Depends(get_db)):
 @app.post("/stop-session")
 def stop_session(db: Session = Depends(get_db)):
     global active_session_id
-    session = db.query(models.SystemSession).filter(models.SystemSession.id == active_session_id).first()
+    
+    if current_operator_id is None:
+        raise HTTPException(status_code=401, detail="Please login first")
+    
+    if active_session_id is None:
+        raise HTTPException(status_code=400, detail="No active session to stop")
+    
+    session = db.query(models.SystemSession).filter(
+        models.SystemSession.id == active_session_id
+    ).first()
     if session:
         session.end_time = datetime.now()
         db.commit()
+
+    try:
+        plc_client.write_register(12, 1)  # register 11 = start
+        print(f"✅ PLC Start Signal Sent.")
+    except Exception as e:
+        print(f"⚠️ PLC Signal Failed: {e}")  
+    
     print(f"🏁 Session {active_session_id} Stopped.")
     active_session_id = None
     return {"message": "Session Stopped"}
+
+
+
+
+
+
+
