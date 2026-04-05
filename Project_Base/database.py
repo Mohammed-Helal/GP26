@@ -3,9 +3,10 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
+# ✅ صح
 SQLALCHEMY_DATABASE_URL = os.getenv(
-    "postgresql://helal:FdnEKO6lGZpdkdat5zkV1InNKUjszjfI@dpg-d7917a8gjchc73fb2fs0-a.frankfurt-postgres.render.com/nexus_6x0a",
-    "postgresql://factory_user:1234@localhost/smart_factory"
+    "DATABASE_URL", 
+    "postgresql://factory_user:1234@localhost/smart_factory" 
 )
 
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
