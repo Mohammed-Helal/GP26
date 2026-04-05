@@ -4,6 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+from pydantic import BaseModel
 
 import models, schemas
 from database import engine, get_db, SessionLocal
@@ -35,7 +36,7 @@ def on_mqtt_message(client, userdata, msg):
 
 mqtt_c = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 mqtt_c.on_message = on_mqtt_message
-
+from pydantic import BaseModel
 # ==========================================
 # FastAPI
 # ==========================================
@@ -77,25 +78,38 @@ def shutdown_event():
 def home():
     return {"status": "Online"}
 
-@app.post("/create-user")
-def create_user(username: str, password: str, role: str = "Operator", db: Session = Depends(get_db)):
-    new_user = models.User(username=username, password_hash=password, access_role=role)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "Operator"
 
 @app.post("/login")
-def login(username: str, password: str, db: Session = Depends(get_db)):
+def login(request: LoginRequest, db: Session = Depends(get_db)):
     global current_operator_id
     user = db.query(models.User).filter(
-        models.User.username == username,
-        models.User.password_hash == password
+        models.User.username == request.username,
+        models.User.password_hash == request.password
     ).first()
     if not user:
         raise HTTPException(status_code=401, detail="Wrong username or password")
     current_operator_id = user.id
     return {"user_id": user.id, "username": user.username, "role": user.access_role}
+
+@app.post("/create-user")
+def create_user(request: CreateUserRequest, db: Session = Depends(get_db)):
+    new_user = models.User(
+        username=request.username,
+        password_hash=request.password,
+        access_role=request.role
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 @app.post("/logout")
 def logout():
