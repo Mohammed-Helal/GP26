@@ -159,3 +159,36 @@ def stop_session(db: Session = Depends(get_db)):
     print(f"🏁 Session {active_session_id} Stopped.")
     active_session_id = None
     return {"message": "Session Stopped"}
+
+# ==========================================
+# GET Endpoints
+# ==========================================
+
+@app.get("/inspections")
+def get_inspections(db: Session = Depends(get_db)):
+    inspections = db.query(models.Inspection).all()
+    return inspections
+
+@app.get("/inspections/session/{session_id}")
+def get_inspections_by_session(session_id: int, db: Session = Depends(get_db)):
+    inspections = db.query(models.Inspection).filter(
+        models.Inspection.session_id == session_id
+    ).all()
+    return inspections
+
+@app.get("/telemetry")
+def get_telemetry(db: Session = Depends(get_db)):
+    telemetry = db.query(models.SensorData).all()
+    return telemetry
+
+@app.get("/telemetry/session/{session_id}")
+def get_telemetry_by_session(session_id: int, db: Session = Depends(get_db)):
+    telemetry = db.query(models.SensorData).filter(
+        models.SensorData.session_id == session_id
+    ).all()
+    return telemetry
+
+@app.get("/sessions")
+def get_sessions(db: Session = Depends(get_db)):
+    sessions = db.query(models.SystemSession).all()
+    return sessions
