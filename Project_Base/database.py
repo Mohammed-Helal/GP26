@@ -1,22 +1,20 @@
-# database.py
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
 
-# Database connection URL (PostgreSQL)
-# Format: postgresql://user:password@host:port/dbname
-SQLALCHEMY_DATABASE_URL = "postgresql://factory_user:1234@localhost/smart_factory"
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://factory_user:1234@localhost/smart_factory"
+)
 
-# Create the SQLAlchemy engine
+if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
-
-# Create a configured "Session" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Create a Base class for our classes definitions
 Base = declarative_base()
 
-# Dependency to get the database session
 def get_db():
     db = SessionLocal()
     try:
