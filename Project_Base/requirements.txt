@@ -59,11 +59,7 @@ SQLAlchemy==2.0.46
 starlette==0.52.1
 sympy==1.14.0
 tokenizers==0.22.2
-torch==2.10.0
-torchaudio==2.10.0
-torchvision==0.25.0
 tqdm==4.67.3
-transformers==5.3.0
 triton==3.6.0
 typer==0.24.1
 typing-inspection==0.4.2
