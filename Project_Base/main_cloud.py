@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import models, schemas
 from database import engine, get_db, SessionLocal
 
-MQTT_BROKER = "127.0.0.1"
+MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
 
 # Global Variable
 active_session_id = None
@@ -36,7 +36,6 @@ def on_mqtt_message(client, userdata, msg):
 
 mqtt_c = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 mqtt_c.on_message = on_mqtt_message
-from pydantic import BaseModel
 # ==========================================
 # FastAPI
 # ==========================================
