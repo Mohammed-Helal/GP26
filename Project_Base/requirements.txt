@@ -3,3 +3,4 @@ uvicorn
 sqlalchemy
 paho-mqtt
 pydantic
+psycopg2-binary
