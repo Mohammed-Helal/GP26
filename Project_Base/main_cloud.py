@@ -111,6 +111,94 @@ def create_user(request: CreateUserRequest, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
+# ==========================================
+# User Edit Endpoints
+# ==========================================
+
+class EditPasswordRequest(BaseModel):
+    new_password: str
+
+class EditUsernameRequest(BaseModel):
+    new_username: str
+
+class EditRoleRequest(BaseModel):
+    new_role: str
+
+@app.put("/edit-password/{user_id}")
+def edit_password(user_id: int, request: EditPasswordRequest, db: Session = Depends(get_db)):
+    # Check if user is logged in
+    if current_operator_id is None:
+        raise HTTPException(status_code=401, detail="Please login first")
+
+    # Check if user exists
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if user has permission to edit this account
+    if current_operator_id != user_id and current_operator_id is not None:
+        raise HTTPException(status_code=403, detail="You can only edit your own account")
+
+    # Update password
+    user.password_hash = request.new_password
+    db.commit()
+
+    print(f"🔑 Password updated for user {user_id}")
+    return {"message": "Password updated successfully"}
+
+@app.put("/edit-username/{user_id}")
+def edit_username(user_id: int, request: EditUsernameRequest, db: Session = Depends(get_db)):
+    # Check if user is logged in
+    if current_operator_id is None:
+        raise HTTPException(status_code=401, detail="Please login first")
+
+    # Check if user exists
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if user has permission to edit this account
+    if current_operator_id != user_id and current_operator_id is not None:
+        raise HTTPException(status_code=403, detail="You can only edit your own account")
+
+    # Check if new username already exists
+    existing_user = db.query(models.User).filter(
+        models.User.username == request.new_username,
+        models.User.id != user_id
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    # Update username
+    user.username = request.new_username
+    db.commit()
+
+    print(f"👤 Username updated for user {user_id}")
+    return {"message": "Username updated successfully"}
+
+@app.put("/edit-role/{user_id}")
+def edit_role(user_id: int, request: EditRoleRequest, db: Session = Depends(get_db)):
+    # Check if user is logged in
+    if current_operator_id is None:
+        raise HTTPException(status_code=401, detail="Please login first")
+
+    # Check if user exists
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Only Admin can edit roles
+    admin_user = db.query(models.User).filter(models.User.id == current_operator_id).first()
+    if not admin_user or admin_user.access_role != "Admin":
+        raise HTTPException(status_code=403, detail="Only Admin can edit user roles")
+
+    # Update role
+    user.access_role = request.new_role
+    db.commit()
+
+    print(f"🎭 Role updated for user {user_id} to {request.new_role}")
+    return {"message": "Role updated successfully"}
+
 @app.post("/logout")
 def logout():
     global current_operator_id, active_session_id
