@@ -198,6 +198,46 @@ def edit_role(user_id: int, request: EditRoleRequest, db: Session = Depends(get_
     print(f"🎭 Role updated for user {user_id} to {request.new_role}")
     return {"message": "Role updated successfully"}
 
+# ==========================================
+# Delete User Endpoint
+# ==========================================
+
+@app.delete("/delete-user/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    # Check if user is logged in
+    if current_operator_id is None:
+        raise HTTPException(status_code=401, detail="Please login first")
+
+    # Check if user exists
+    user_to_delete = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user_to_delete:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Only Admin can delete users
+    admin_user = db.query(models.User).filter(models.User.id == current_operator_id).first()
+    if not admin_user or admin_user.access_role != "Admin":
+        raise HTTPException(status_code=403, detail="Only Admin can delete users")
+
+    # Cannot delete the admin user being used for this request
+    if user_id == current_operator_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account while logged in")
+
+    # Check if user has active sessions
+    active_sessions = db.query(models.SystemSession).filter(
+        models.SystemSession.operator_id == user_id,
+        models.SystemSession.end_time == None
+    ).all()
+
+    if active_sessions:
+        raise HTTPException(status_code=400, detail="Cannot delete user with active sessions. Please stop all active sessions first.")
+
+    # Delete user
+    db.delete(user_to_delete)
+    db.commit()
+
+    print(f"🗑️ User {user_id} ({user_to_delete.username}) deleted by Admin {current_operator_id}")
+    return {"message": f"User {user_to_delete.username} deleted successfully"}
+
 @app.post("/logout")
 def logout():
     global current_operator_id, active_session_id
