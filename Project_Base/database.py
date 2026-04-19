@@ -6,7 +6,7 @@ import os
 # ✅ صح
 SQLALCHEMY_DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://factory_user:1234@localhost/smart_factory" 
+    "postgresql://helal:FdnEKO6lGZpdkdat5zkV1InNKUjszjfI@dpg-d7917a8gjchc73fb2fs0-a.frankfurt-postgres.render.com/nexus_6x0a" 
 )
 
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
