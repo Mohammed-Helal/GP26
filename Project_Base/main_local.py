@@ -1,11 +1,8 @@
-import json, os, cv2, torch, time
+import os, cv2, torch, time
 from datetime import datetime
 from threading import Thread
 from PIL import Image
 from pymodbus.client import ModbusTcpClient
-import uvicorn
-from fastapi import FastAPI
-import requests
 
 import models
 from database import SessionLocal
@@ -15,9 +12,8 @@ from database import SessionLocal
 # ==========================================
 PLC_IP = "192.168.1.200"
 PLC_PORT = 502
-MODEL_PATH = "banana_classifier_final"
+MODEL_PATH = "Project_Base/banana_classifier_final"
 OUTPUT_DIR = "banana_classifications"
-CLOUD_API = "https://gp26-ckys.onrender.com"
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -27,40 +23,61 @@ active_session_id = None
 plc_client = ModbusTcpClient(PLC_IP, port=PLC_PORT)
 
 # ==========================================
-# Local FastAPI (PLC Commands)
+# Helper: Start Session in DB
 # ==========================================
-local_app = FastAPI(title="Local PLC API")
-
-@local_app.post("/plc-start")
-def plc_start(session_id: int):
+def start_session_in_db():
+    """Create a new session in the database"""
     global active_session_id
     try:
-        active_session_id = session_id
-        plc_client.write_register(11, 1)
-        print(f"✅ PLC Start Signal Sent. Session: {session_id}")
-        return {"message": "PLC Start Signal Sent"}
+        db = SessionLocal()
+        # Check if there's already an open session
+        open_session = db.query(models.SystemSession).filter(
+            models.SystemSession.end_time == None
+        ).first()
+        if open_session:
+            print(f"⚠️ Session already exists in DB: {open_session.id}")
+            active_session_id = open_session.id
+            db.close()
+            return open_session.id
+
+        # Create new session
+        new_s = models.SystemSession(
+            operator_id=1,
+            start_time=datetime.now()
+        )
+        db.add(new_s)
+        db.commit()
+        db.refresh(new_s)
+        active_session_id = new_s.id
+        db.close()
+        print(f"🆕 New Session Created in DB: {active_session_id}")
+        return active_session_id
     except Exception as e:
-        print(f"❌ PLC Error: {e}")
-        return {"error": str(e)}
+        print(f"❌ DB Error while starting session: {e}")
+        return None
 
-@local_app.post("/plc-stop")
-def plc_stop():
+# ==========================================
+# Helper: Stop Session in DB
+# ==========================================
+def stop_session_in_db():
+    """Close the active session in the database"""
     global active_session_id
+    if active_session_id is None:
+        print("⚠️ No active session to stop.")
+        return
     try:
+        db = SessionLocal()
+        session = db.query(models.SystemSession).filter(
+            models.SystemSession.id == active_session_id
+        ).first()
+        if session:
+            session.end_time = datetime.now()
+            db.commit()
+            print(f"🏁 Session {active_session_id} Closed in DB.")
+        db.close()
         active_session_id = None
-        plc_client.write_register(12, 1)
-        print("🏁 PLC Stop Signal Sent.")
-        return {"message": "PLC Stop Signal Sent"}
     except Exception as e:
-        print(f"❌ PLC Error: {e}")
-        return {"error": str(e)}
-
-@local_app.get("/status")
-def status():
-    return {
-        "plc_connected": plc_client.is_socket_open(),
-        "active_session": active_session_id
-    }
+        print(f"❌ DB Error while stopping session: {e}")
 
 # ==========================================
 # AI Logic
@@ -80,9 +97,14 @@ def run_ai_logic():
         return
 
     cap = cv2.VideoCapture(0)
-    previous_sensor_value = None
+    previous_mw10_value = None
+    last_db_check = time.time()
+    take_photo = None
 
-    print("📸 Camera Stream Started. Press 'q' to quit.")
+    print("📸 Camera Stream Started.")
+    print("💡 Press 's' to simulate MW11=1 (Start Session)")
+    print("💡 Press 'd' to simulate MW11=0 (Stop Session)")
+    print("💡 Press 'q' to quit")
 
     while True:
         ret, frame = cap.read()
@@ -93,17 +115,78 @@ def run_ai_logic():
         cv2.imshow("System - Live Feed", frame)
         key = cv2.waitKey(1) & 0xFF
 
-        try:
-            # Trigger on register 10
-            response = plc_client.read_holding_registers(10, count=1)
-            if not response.isError():
-                current_sensor_value = response.registers[0]
+        # ==========================================
+        # Keyboard simulation for testing
+        # ==========================================
+        if key == ord('s'):
+            plc_client.write_register(11, 1)
+            print("🔑 Key 's' pressed → MW11 = 1")
 
-                if (previous_sensor_value == 1 and current_sensor_value == 0) or (key == ord('a')):
+        if key == ord('d'):
+            plc_client.write_register(11, 0)
+            print("🔑 Key 'd' pressed → MW11 = 0")
+
+        if key == ord('v'):
+            take_photo = 1
+            print("take_photo")
+
+        try:
+            # ==========================================
+            # Check DB every 0.5 seconds
+            # ==========================================
+            if time.time() - last_db_check >= 0.5:
+                db = SessionLocal()
+                open_session = db.query(models.SystemSession).filter(
+                    models.SystemSession.end_time == None
+                ).first()
+                db.close()
+                last_db_check = time.time()
+
+                # New session detected in DB → start PLC
+                if open_session and active_session_id != open_session.id:
+                    active_session_id = open_session.id
+                    plc_client.write_register(11, 1)
+                    print(f"🆕 Session {active_session_id} detected in DB → MW11 = 1 → PLC Started")
+
+                # Session ended in DB → stop PLC
+                elif not open_session and active_session_id is not None:
+                    active_session_id = None
+                    plc_client.write_register(11, 0)
+                    print("🏁 Session ended in DB → MW11 = 0 → PLC Stopped")
+
+            # ==========================================
+            # Read MW11 from PLC
+            # ==========================================
+            mw11_response = plc_client.read_holding_registers(11, count=1)
+            if mw11_response and not mw11_response.isError():
+                mw11_value = mw11_response.registers[0]
+            else:
+                print("PLC not connected")
+
+            # MW11 = 1 and no active session → Start session
+            if mw11_value == 1 and active_session_id is None:
+                print("📡 MW11 = 1 detected → Starting Session...")
+                start_session_in_db()
+
+            # MW11 = 0 and session is active → Stop session
+            elif mw11_value == 0 and active_session_id is not None:
+                print("📡 MW11 = 0 detected → Stopping Session...")
+                stop_session_in_db()
+
+            # ==========================================
+            # Read MW10 - Product Detection Trigger
+            # ==========================================
+            mw10_response = plc_client.read_holding_registers(10, count=1)
+            if mw10_response and not mw10_response.isError():
+                mw10_value = mw10_response.registers[0]
+                print(f"MW10_Value = {mw10_value}")
+
+                # Trigger when MW10 goes from 0 to 1
+                if mw10_value == 1 and previous_mw10_value == 0 or take_photo is not None:
                     if active_session_id is None:
-                        print("⚠️ No active session, skipping.")
+                        print("⚠️ MW10 triggered but no active session, skipping.")
                     else:
-                        print("⚡ Sensor Triggered! Classifying...")
+                        print("⚡ MW10 = 1 detected! Product detected, Classifying...")
 
                         # Process image
                         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -117,13 +200,15 @@ def run_ai_logic():
                         pred_idx = outputs.logits.argmax(-1).item()
                         label = model.config.id2label[pred_idx]
                         conf = probs[pred_idx].item() * 100
+                        print(f"🤖 AI Result: {label} | Confidence: {conf:.2f}%")
 
-                        # Save image
+                        # Save image locally
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                         img_path = os.path.join(OUTPUT_DIR, f"product_{ts}.jpg")
                         cv2.imwrite(img_path, frame)
+                        print(f"🖼️ Image Saved: {img_path}")
 
-                        # Save to DB
+                        # Save inspection to DB
                         db = SessionLocal()
                         new_insp = models.Inspection(
                             session_id=active_session_id,
@@ -133,23 +218,27 @@ def run_ai_logic():
                         )
                         db.add(new_insp)
                         db.commit()
-                        print(f"📊 Result Saved! Status: {label} | Confidence: {conf:.2f}%")
+                        print(f"📊 Inspection Saved to DB! Session: {active_session_id} | Status: {label}")
                         db.close()
+                        take_photo = None
 
-                        # Send command to PLC
+                        # Send pass/reject command to PLC
                         if label.lower() == "fresh":
                             plc_client.write_register(0, 1)
-                            print("✅ Command: PASS")
+                            print("✅ Command Sent to PLC: PASS")
                         else:
                             plc_client.write_register(1, 1)
-                            print("❌ Command: REJECT")
+                            print("❌ Command Sent to PLC: REJECT")
 
-                previous_sensor_value = current_sensor_value
+                previous_mw10_value = mw10_value
 
         except Exception as e:
+            # Continue loop despite connection errors
             pass
 
+        # 'q' key → quit
         if key == ord('q'):
+            print("👋 Quitting...")
             break
 
         time.sleep(0.05)
@@ -161,18 +250,23 @@ def run_ai_logic():
 # Main
 # ==========================================
 if __name__ == "__main__":
-    # Connect PLC
+    # Connect to PLC
     if plc_client.connect():
         print(f"✅ Connected to PLC at {PLC_IP}")
     else:
-        print(f"❌ PLC Connection Failed at {PLC_IP}")
+        print(f"❌ PLC Connection Failed at {PLC_IP} - Running without PLC")
 
-    # Start Local API in background thread
-    Thread(
-        target=lambda: uvicorn.run(local_app, host="0.0.0.0", port=8001),
-        daemon=True
-    ).start()
-    print("✅ Local API Started on port 8001")
+    # Restore session if app was restarted
+    db = SessionLocal()
+    open_session = db.query(models.SystemSession).filter(
+        models.SystemSession.end_time == None
+    ).first()
+    if open_session:
+        active_session_id = open_session.id
+        print(f"🔄 Restored Active Session from DB: {active_session_id}")
+    else:
+        print("ℹ️ No active session found in DB.")
+    db.close()
 
     # Start AI Logic
     run_ai_logic()
