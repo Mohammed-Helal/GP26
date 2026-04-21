@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import models, schemas
 from database import engine, get_db, SessionLocal
 
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+MQTT_BROKER = "127.0.0.1"
 
 # Global Variable
 active_session_id = None
@@ -36,19 +36,19 @@ def on_mqtt_message(client, userdata, msg):
 
 mqtt_c = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 mqtt_c.on_message = on_mqtt_message
+
 # ==========================================
 # FastAPI
 # ==========================================
-app = FastAPI(title="Smart Factory Cloud API")
+app = FastAPI(title="Smart Factory Local API")
 
 @app.on_event("startup")
 def startup_event():
-    global active_session_id, current_operator_id
-    print("\n🚀 Starting Cloud Services...")
+    print("\n🚀 Starting Local Services...")
     models.Base.metadata.create_all(bind=engine)
     print("✅ Database Tables Verified.")
 
-    # Restore session if server restarted
+    global active_session_id, current_operator_id
     db = SessionLocal()
     open_session = db.query(models.SystemSession).filter(
         models.SystemSession.end_time == None
@@ -69,14 +69,14 @@ def startup_event():
 @app.on_event("shutdown")
 def shutdown_event():
     mqtt_c.loop_stop()
-    print("🛑 Cloud Service Shutdown.")
+    print("🛑 Local Service Shutdown.")
 
 # ==========================================
 # Endpoints
 # ==========================================
 @app.get("/")
 def home():
-    return {"status": "Online"}
+    return {"status": "Online", "mode": "Local"}
 
 class LoginRequest(BaseModel):
     username: str
@@ -86,6 +86,15 @@ class CreateUserRequest(BaseModel):
     username: str
     password: str
     role: str = "Operator"
+
+class EditPasswordRequest(BaseModel):
+    new_password: str
+
+class EditUsernameRequest(BaseModel):
+    new_username: str
+
+class EditRoleRequest(BaseModel):
+    new_role: str
 
 @app.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
@@ -111,132 +120,72 @@ def create_user(request: CreateUserRequest, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-# ==========================================
-# User Edit Endpoints
-# ==========================================
-
-class EditPasswordRequest(BaseModel):
-    new_password: str
-
-class EditUsernameRequest(BaseModel):
-    new_username: str
-
-class EditRoleRequest(BaseModel):
-    new_role: str
-
 @app.put("/edit-password/{user_id}")
 def edit_password(user_id: int, request: EditPasswordRequest, db: Session = Depends(get_db)):
-    # Check if user is logged in
     if current_operator_id is None:
         raise HTTPException(status_code=401, detail="Please login first")
-
-    # Check if user exists
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Check if user has permission to edit this account
-    if current_operator_id != user_id and current_operator_id is not None:
+    if current_operator_id != user_id:
         raise HTTPException(status_code=403, detail="You can only edit your own account")
-
-    # Update password
     user.password_hash = request.new_password
     db.commit()
-
-    print(f"🔑 Password updated for user {user_id}")
     return {"message": "Password updated successfully"}
 
 @app.put("/edit-username/{user_id}")
 def edit_username(user_id: int, request: EditUsernameRequest, db: Session = Depends(get_db)):
-    # Check if user is logged in
     if current_operator_id is None:
         raise HTTPException(status_code=401, detail="Please login first")
-
-    # Check if user exists
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Check if user has permission to edit this account
-    if current_operator_id != user_id and current_operator_id is not None:
+    if current_operator_id != user_id:
         raise HTTPException(status_code=403, detail="You can only edit your own account")
-
-    # Check if new username already exists
     existing_user = db.query(models.User).filter(
         models.User.username == request.new_username,
         models.User.id != user_id
     ).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already exists")
-
-    # Update username
     user.username = request.new_username
     db.commit()
-
-    print(f"👤 Username updated for user {user_id}")
     return {"message": "Username updated successfully"}
 
 @app.put("/edit-role/{user_id}")
 def edit_role(user_id: int, request: EditRoleRequest, db: Session = Depends(get_db)):
-    # Check if user is logged in
     if current_operator_id is None:
         raise HTTPException(status_code=401, detail="Please login first")
-
-    # Check if user exists
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Only Admin can edit roles
     admin_user = db.query(models.User).filter(models.User.id == current_operator_id).first()
     if not admin_user or admin_user.access_role != "Admin":
         raise HTTPException(status_code=403, detail="Only Admin can edit user roles")
-
-    # Update role
     user.access_role = request.new_role
     db.commit()
-
-    print(f"🎭 Role updated for user {user_id} to {request.new_role}")
     return {"message": "Role updated successfully"}
-
-# ==========================================
-# Delete User Endpoint
-# ==========================================
 
 @app.delete("/delete-user/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db)):
-    # Check if user is logged in
     if current_operator_id is None:
         raise HTTPException(status_code=401, detail="Please login first")
-
-    # Check if user exists
     user_to_delete = db.query(models.User).filter(models.User.id == user_id).first()
     if not user_to_delete:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Only Admin can delete users
     admin_user = db.query(models.User).filter(models.User.id == current_operator_id).first()
     if not admin_user or admin_user.access_role != "Admin":
         raise HTTPException(status_code=403, detail="Only Admin can delete users")
-
-    # Cannot delete the admin user being used for this request
     if user_id == current_operator_id:
-        raise HTTPException(status_code=400, detail="Cannot delete your own admin account while logged in")
-
-    # Check if user has active sessions
+        raise HTTPException(status_code=400, detail="Cannot delete your own account while logged in")
     active_sessions = db.query(models.SystemSession).filter(
         models.SystemSession.operator_id == user_id,
         models.SystemSession.end_time == None
     ).all()
-
     if active_sessions:
-        raise HTTPException(status_code=400, detail="Cannot delete user with active sessions. Please stop all active sessions first.")
-
-    # Delete user
+        raise HTTPException(status_code=400, detail="Cannot delete user with active sessions")
     db.delete(user_to_delete)
     db.commit()
-
-    print(f"🗑️ User {user_id} ({user_to_delete.username}) deleted by Admin {current_operator_id}")
     return {"message": f"User {user_to_delete.username} deleted successfully"}
 
 @app.post("/logout")
@@ -287,10 +236,6 @@ def stop_session(db: Session = Depends(get_db)):
     print(f"🏁 Session {active_session_id} Stopped.")
     active_session_id = None
     return {"message": "Session Stopped"}
-
-# ==========================================
-# GET Endpoints
-# ==========================================
 
 @app.get("/inspections")
 def get_inspections(db: Session = Depends(get_db)):
