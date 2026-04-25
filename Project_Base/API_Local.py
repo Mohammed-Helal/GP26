@@ -267,9 +267,20 @@ def get_sessions(db: Session = Depends(get_db)):
     return sessions
 
 @app.get("/session-status")
-def session_status():
-    return {
-        "active_session_id": active_session_id,
-        "is_running": active_session_id is not None,
-        "operator_id": current_operator_id
-    }
+def session_status(db: Session = Depends(get_db)):
+    active_session = db.query(models.SystemSession).filter(
+        models.SystemSession.end_time == None
+    ).first()
+
+    if active_session:
+        return {
+            "active_session_id": active_session.id,
+            "is_running": True,
+            "operator_id": active_session.operator_id
+        }
+    else:
+        return {
+            "active_session_id": None,
+            "is_running": False,
+            "operator_id": None
+        }

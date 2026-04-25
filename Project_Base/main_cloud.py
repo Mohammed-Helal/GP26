@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 import models, schemas
 from database import engine, get_db, SessionLocal
@@ -40,6 +41,15 @@ mqtt_c.on_message = on_mqtt_message
 # FastAPI
 # ==========================================
 app = FastAPI(title="Smart Factory Cloud API")
+
+# ✅ Add CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 def startup_event():
