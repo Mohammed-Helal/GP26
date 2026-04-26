@@ -349,3 +349,26 @@ def session_status(db: Session = Depends(get_db)):
             "is_running": False,
             "operator_id": None
         }
+    
+@app.get("/users")
+def get_users(db: Session = Depends(get_db)):
+    users = db.query(models.User).all()
+    return [
+        {
+            "id": user.id,
+            "username": user.username,
+            "access_role": user.access_role
+        }
+        for user in users
+    ]
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": user.id,
+        "username": user.username,
+        "access_role": user.access_role
+    }
