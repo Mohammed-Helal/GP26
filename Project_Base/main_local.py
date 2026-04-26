@@ -1,10 +1,12 @@
-import os, cv2, torch, time
+import os, cv2, torch, time, json
 from datetime import datetime
 from threading import Thread
 from PIL import Image
 from pymodbus.client import ModbusTcpClient
 import cloudinary
 import cloudinary.uploader
+import paho.mqtt.client as mqtt
+from paho.mqtt.enums import CallbackAPIVersion
 
 import models
 from database import SessionLocal
@@ -22,8 +24,50 @@ PLC_PORT = 502
 MODEL_PATH = "Project_Base/banana_classifier_final"
 OUTPUT_DIR = "banana_classifications"
 
+# MQTT Configuration
+MQTT_BROKER = "192.168.1.100"  # Update with your MQTT broker IP
+MQTT_PORT = 1883
+MQTT_TOPIC = "factory/sensors"
+
+
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
+
+# ==========================================
+# MQTT
+# ==========================================
+def on_mqtt_message(client, userdata, msg):
+    global active_session_id
+    try:
+        data = json.loads(msg.payload.decode())
+        
+        if active_session_id is None:
+            return
+
+        db = SessionLocal()
+        tele = models.SensorData(
+            session_id=active_session_id,
+            temp=data.get('temperature', 0.0),    
+            vibration=data.get('vibration', 0.0),   
+            current=data.get('current', 0.0)     
+        )
+        db.add(tele)
+        db.commit()
+        db.close()
+    except json.JSONDecodeError:
+        print("❌ MQTT Error: Received malformed JSON from ESP")
+    except Exception as e:
+        print(f"❌ MQTT Database Error: {e}")
+
+# MQTT Setup
+def on_mqtt_connect(client, userdata, flags, reason_code, properties):
+    print(f"✅ Connected to MQTT Broker!")
+    client.subscribe(MQTT_TOPIC)
+    print(f"📡 Subscribed to topic: {MQTT_TOPIC}")
+
+mqtt_client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+mqtt_client.on_connect = on_mqtt_connect
+mqtt_client.on_message = on_mqtt_message
 
 # ==========================================
 # Cloudinary Configuration
@@ -366,6 +410,14 @@ if __name__ == "__main__":
     else:
         print(f"❌ PLC Connection Failed at {PLC_IP} - Running in Simulation Mode (No PLC)")
         plc_connected = False
+
+    try:
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_start()
+        print(f"✅ MQTT Client Started. Broker: {MQTT_BROKER}:{MQTT_PORT}")
+    except Exception as e:
+        print(f"❌ MQTT Connection Failed: {e}")
+
 
     db = SessionLocal()
     open_session = db.query(models.SystemSession).filter(
