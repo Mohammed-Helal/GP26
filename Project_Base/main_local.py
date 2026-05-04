@@ -1,4 +1,4 @@
-import os, cv2, torch, time, json
+import os, cv2, time, json
 from datetime import datetime
 from threading import Thread
 from PIL import Image
@@ -7,6 +7,10 @@ import cloudinary
 import cloudinary.uploader
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.applications.efficientnet import preprocess_input
 
 import models
 from database import SessionLocal
@@ -21,11 +25,14 @@ os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
 
 PLC_IP = "192.168.1.200"
 PLC_PORT = 502
-MODEL_PATH = "Project_Base/banana_classifier_final"
-OUTPUT_DIR = "banana_classifications"
+# MODEL_PATH = "Project_Base/banana_classifier_final"
+MODEL_PATH_Tensor = r"Project_Base/bottle_model.h5"
+CLASS_NAMES = ['Broken', 'Good', 'Label', 'Scratch']  
+
+OUTPUT_DIR = "Project_Base/Images"
 
 # MQTT Configuration
-MQTT_BROKER = "192.168.1.100"  # Update with your MQTT broker IP
+MQTT_BROKER = "10.162.59.90"  # Update with your MQTT broker IP
 MQTT_PORT = 1883
 MQTT_TOPIC = "factory/sensors"
 
@@ -40,7 +47,7 @@ def on_mqtt_message(client, userdata, msg):
     global active_session_id
     try:
         data = json.loads(msg.payload.decode())
-        
+        print(f"ESP Data {data}")
         if active_session_id is None:
             return
 
@@ -126,8 +133,8 @@ class CameraStream:
     A class to run camera reading in a separate background thread.
     This prevents the AI and network delays from freezing the video feed.
     """
-    def __init__(self, src=0):
-        self.stream = cv2.VideoCapture(src)
+    def __init__(self):
+        self.stream = cv2.VideoCapture(0)
         (self.grabbed, self.frame) = self.stream.read()
         self.stopped = False
 
@@ -211,13 +218,14 @@ def stop_session_in_db():
 # ==========================================
 def run_ai_logic():
     global active_session_id, current_operator_id, plc_connected
-    from transformers import AutoImageProcessor, AutoModelForImageClassification
+    # from transformers import AutoImageProcessor, AutoModelForImageClassification
 
     print("🔄 Loading AI Model...")
     try:
-        preprocessor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
-        model = AutoModelForImageClassification.from_pretrained(MODEL_PATH)
-        model.eval()
+        # preprocessor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
+        # model = AutoModelForImageClassification.from_pretrained(MODEL_PATH)
+        # model.eval()
+        model = tf.keras.models.load_model(MODEL_PATH_Tensor)
         print("✅ AI Model Loaded Successfully.")
     except Exception as e:
         print(f"❌ Error Loading Model: {e}")
@@ -228,7 +236,7 @@ def run_ai_logic():
     Thread(target=db_monitor_thread, daemon=True).start()
 
     # Initialize and start the camera stream thread
-    cam = CameraStream(0).start()
+    cam = CameraStream().start()
     take_photo = None
 
     print("📸 Camera Stream Started.")
@@ -322,29 +330,41 @@ def run_ai_logic():
                 else:
                     print("⚡ Product detected! Running AI Classification...")
 
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    img = Image.fromarray(rgb_frame)
-                    inputs = preprocessor(images=img, return_tensors="pt")
+                    # rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    # img = Image.fromarray(rgb_frame)
+                    # inputs = preprocessor(images=img, return_tensors="pt")
 
-                    with torch.no_grad():
-                        outputs = model(**inputs)
+                    # with torch.no_grad():
+                    #     outputs = model(**inputs)
 
-                    probs = torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
-                    pred_idx = outputs.logits.argmax(-1).item()
-                    label = model.config.id2label[pred_idx]
-                    conf = probs[pred_idx].item() * 100
-                    print(f"🤖 AI Result: {label} | Confidence: {conf:.2f}%")
+                    # probs = torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
+                    # pred_idx = outputs.logits.argmax(-1).item()
+                    # label = model.config.id2label[pred_idx]
+                    # conf = probs[pred_idx].item() * 100
+                    
+                    # Preprocess
+                    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    img = cv2.resize(img, (224, 224))
+                    img = np.expand_dims(img, axis=0)
+                    img = preprocess_input(img)
+
+                    # Predict
+                    predictions = model.predict(img, verbose=0)[0]
+                    predicted_idx   = np.argmax(predictions)
+                    predicted_class = CLASS_NAMES[predicted_idx]
+                    confidence      = predictions[predicted_idx] * 100
+                    print(f"🤖 AI Result: {predicted_class} | Confidence: {confidence:.2f}%")
 
                     # ==========================================
                     # Cloud Upload Logic (Only if confidence < 70)
                     # ==========================================
-                    if conf < 100:
+                    if confidence < 100:
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                         temp_local_path = os.path.join(OUTPUT_DIR, f"temp_low_conf_{ts}.jpg")
                         
                         # 1. Save image locally temporarily
                         cv2.imwrite(temp_local_path, frame)
-                        print(f"☁️ Low confidence ({conf:.2f}%) detected. Uploading to Cloudinary...")
+                        print(f"☁️ Low confidence ({confidence:.2f}%) detected. Uploading to Cloudinary...")
                         
                         try:
                             # 2. Upload to Cloudinary
@@ -355,8 +375,8 @@ def run_ai_logic():
                             db = SessionLocal()
                             new_insp = models.Inspection(
                                 session_id=active_session_id,
-                                status=label,
-                                confidence=conf,
+                                status=predicted_class,
+                                confidence=confidence,
                                 image_path=secure_url # Save the online link
                             )
                             db.add(new_insp)
@@ -373,7 +393,7 @@ def run_ai_logic():
                                 os.remove(temp_local_path)
                                 print(f"🗑️ Cleaned up temporary file.")
                     else:
-                        print(f"✅ High confidence ({conf:.2f}%), skipping upload.")
+                        print(f"✅ High confidence ({confidence:.2f}%), skipping upload.")
 
                     # Reset trigger flags
                     take_photo = None
@@ -381,7 +401,7 @@ def run_ai_logic():
                         plc_client.write_register(10, 0)
 
                     # Send PASS/REJECT command to PLC
-                    if label.lower() == "fresh":
+                    if predicted_class.lower() == "Good":
                         if plc_connected: plc_client.write_register(0, 1)
                         print("✅ Command Sent to PLC: PASS")
                     else:

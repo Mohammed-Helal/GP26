@@ -40,7 +40,7 @@ mqtt_c.on_message = on_mqtt_message
 # ==========================================
 # FastAPI
 # ==========================================
-app = FastAPI(title="Smart Factory Cloud API")
+app = FastAPI(title="HELAL")
 
 # ✅ Add CORS
 app.add_middleware(
