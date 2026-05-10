@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from paho.mqtt.enums import CallbackAPIVersion
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from utils import move_to_confirmed_dataset
 
 import models, schemas
 from database import engine, get_db, SessionLocal
@@ -204,12 +205,20 @@ def confirm_only(inspection_id: int, db: Session = Depends(get_db)):
     
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    
+    old_path = inspection.image_path
 
     inspection.is_confirmed = True
     
     db.commit()
     print(f"✅ Inspection {inspection_id} has been confirmed by user.")
     
+    new_path = move_to_confirmed_dataset(old_path, inspection.defect_category)
+
+    if new_path:
+        inspection.image_path = new_path
+        db.commit()
+
     return {
         "status": "success",
         "message": f"Inspection {inspection_id} confirmed",

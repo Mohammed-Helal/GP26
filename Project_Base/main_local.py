@@ -353,6 +353,10 @@ def run_ai_logic():
                     predicted_idx   = np.argmax(predictions)
                     predicted_class = CLASS_NAMES[predicted_idx]
                     confidence = float(predictions[predicted_idx] * 100)
+                    if predicted_class == "Good":
+                        status = "Accepted"
+                    else:
+                        status = "Defected"
                     print(f"🤖 AI Result: {predicted_class} | Confidence: {confidence:.2f}%")
 
                     # ==========================================
@@ -375,7 +379,8 @@ def run_ai_logic():
                             db = SessionLocal()
                             new_insp = models.Inspection(
                                 session_id=active_session_id,
-                                status=predicted_class,
+                                status=status,
+                                defect_category=predicted_class,
                                 confidence=confidence,
                                 image_path=secure_url # Save the online link
                             )
