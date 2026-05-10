@@ -32,7 +32,7 @@ CLASS_NAMES = ['Broken', 'Good', 'Label', 'Scratch']
 OUTPUT_DIR = r"Project_Base/Images"
 
 # MQTT Configuration
-MQTT_BROKER = "10.162.59.90"  # Update with your MQTT broker IP
+MQTT_BROKER = "192.168.1.238"  # Update with your MQTT broker IP
 MQTT_PORT = 1883
 MQTT_TOPIC = "factory/sensors"
 
