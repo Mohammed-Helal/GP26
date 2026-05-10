@@ -24,7 +24,7 @@ class InspectionBase(BaseModel):
     defect_category: Optional[str] = None
     confidence: float
     image_path: str
-    is_confirmed: bool
+    is_confirmed: bool = False
 
 class InspectionCreate(InspectionBase):
     session_id: Optional[int] = None
