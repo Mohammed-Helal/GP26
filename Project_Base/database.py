@@ -3,7 +3,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Direct connection string to Render PostgreSQL (Frankfurt Region)
-SQLALCHEMY_DATABASE_URL = "postgresql://helal:FdnEKO6lGZpdkdat5zkV1InNKUjszjfI@dpg-d7917a8gjchc73fb2fs0-a.frankfurt-postgres.render.com/nexus_6x0a"
+SQLALCHEMY_DATABASE_URL = "postgresql://helal:ahsvW41ctetFxynt6YmKYf17j6LwJPqp@dpg-d8036s5b910c73dfsev0-a.frankfurt-postgres.render.com/nexus_2gs3"
+# SQLALCHEMY_DATABASE_URL = "postgresql://postgres:123456@localhost:5432/smart_factory"
 
 # Database engine configuration
 # sslmode=require is mandatory for external connections to Render

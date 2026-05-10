@@ -29,7 +29,7 @@ PLC_PORT = 502
 MODEL_PATH_Tensor = r"Project_Base/bottle_model.h5"
 CLASS_NAMES = ['Broken', 'Good', 'Label', 'Scratch']  
 
-OUTPUT_DIR = "Project_Base/Images"
+OUTPUT_DIR = r"Project_Base/Images"
 
 # MQTT Configuration
 MQTT_BROKER = "10.162.59.90"  # Update with your MQTT broker IP
@@ -134,7 +134,7 @@ class CameraStream:
     This prevents the AI and network delays from freezing the video feed.
     """
     def __init__(self):
-        self.stream = cv2.VideoCapture(0)
+        self.stream = cv2.VideoCapture(1)
         (self.grabbed, self.frame) = self.stream.read()
         self.stopped = False
 
