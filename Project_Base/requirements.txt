@@ -4,3 +4,4 @@ sqlalchemy
 paho-mqtt
 pydantic
 pydantic-settings
+psycopg2-binary
