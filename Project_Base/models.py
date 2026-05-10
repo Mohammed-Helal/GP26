@@ -1,5 +1,5 @@
 # models.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -34,6 +34,7 @@ class Inspection(Base):
     confidence = Column(Float, nullable=True)
     image_path = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+    is_confirmed = Column(Boolean, default=False)
 
     session = relationship("SystemSession", back_populates="inspections")
 

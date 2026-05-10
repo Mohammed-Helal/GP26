@@ -3,8 +3,6 @@ from datetime import datetime
 from threading import Thread
 from PIL import Image
 from pymodbus.client import ModbusTcpClient
-import cloudinary
-import cloudinary.uploader
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
@@ -75,16 +73,6 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
 mqtt_client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
 mqtt_client.on_connect = on_mqtt_connect
 mqtt_client.on_message = on_mqtt_message
-
-# ==========================================
-# Cloudinary Configuration
-# ==========================================
-# TODO: Replace these with your actual Cloudinary credentials
-cloudinary.config( 
-  cloud_name = "helal", 
-  api_key = "815319279227261", 
-  api_secret = "8eV6XQ5jEe8U-YjxQgwkVuE23IM" 
-)
 
 # Global Variables for System State
 active_session_id = None
@@ -364,34 +352,25 @@ def run_ai_logic():
                         
                         # 1. Save image locally temporarily
                         cv2.imwrite(temp_local_path, frame)
-                        print(f"☁️ Low confidence ({confidence:.2f}%) detected. Uploading to Cloudinary...")
+                        print(f"☁️ Low confidence ({confidence:.2f}%) detected. Uploading URL to DB...")
                         
                         try:
-                            # 2. Upload to Cloudinary
-                            response = cloudinary.uploader.upload(temp_local_path)
-                            secure_url = response.get('secure_url')
-                            
                             # 3. Save URL to Database
                             db = SessionLocal()
                             new_insp = models.Inspection(
                                 session_id=active_session_id,
                                 status=predicted_class,
                                 confidence=confidence,
-                                image_path=secure_url # Save the online link
+                                image_path=temp_local_path # Save the online link
                             )
                             db.add(new_insp)
                             db.commit()
                             db.close()
-                            print(f"📊 Saved to DB with Cloud Link: {secure_url}")
+                            print(f"📊 Saved to DB with Cloud Link: {temp_local_path}")
                             
                         except Exception as upload_err:
-                            print(f"❌ Cloudinary Upload Failed: {upload_err}")
-                            
-                        # finally:
-                        #     # 4. Remove local temp file to save disk space
-                        #     if os.path.exists(temp_local_path):
-                        #         os.remove(temp_local_path)
-                        #         print(f"🗑️ Cleaned up temporary file.")
+                            print(f"❌ DB URL Upload Failed: {upload_err}")
+
                     else:
                         print(f"✅ High confidence ({confidence:.2f}%), skipping upload.")
 

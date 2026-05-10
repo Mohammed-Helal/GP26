@@ -1,8 +1,6 @@
-import json, os
 from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,33 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import models, schemas
 from database import engine, get_db, SessionLocal
 
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
 
 # Global Variable
 active_session_id = None
 current_operator_id = None
 
-# ==========================================
-# MQTT
-# ==========================================
-def on_mqtt_message(client, userdata, msg):
-    try:
-        data = json.loads(msg.payload.decode())
-        db = SessionLocal()
-        tele = models.SensorData(
-            session_id=active_session_id,
-            temp=data['temp'],
-            vibration=data['vib'],
-            current=data['curr']
-        )
-        db.add(tele)
-        db.commit()
-        db.close()
-    except Exception as e:
-        print(f"MQTT Error: {e}")
-
-mqtt_c = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
-mqtt_c.on_message = on_mqtt_message
 # ==========================================
 # FastAPI
 # ==========================================
@@ -68,18 +44,6 @@ def startup_event():
         current_operator_id = open_session.operator_id
         print(f"🔄 Restored Session {active_session_id}")
     db.close()
-
-    try:
-        mqtt_c.connect(MQTT_BROKER, 1883)
-        mqtt_c.loop_start()
-        print("✅ MQTT Broker Connected.")
-    except Exception as e:
-        print(f"❌ MQTT Connection Failed: {e}")
-
-@app.on_event("shutdown")
-def shutdown_event():
-    mqtt_c.loop_stop()
-    print("🛑 Cloud Service Shutdown.")
 
 # ==========================================
 # Endpoints
@@ -133,6 +97,10 @@ class EditUsernameRequest(BaseModel):
 
 class EditRoleRequest(BaseModel):
     new_role: str
+
+class InspectionConfirmRequest(BaseModel):
+    status: str         
+    defect_category: str    
 
 @app.put("/edit-password/{user_id}")
 def edit_password(user_id: int, request: EditPasswordRequest, db: Session = Depends(get_db)):
@@ -209,6 +177,45 @@ def edit_role(user_id: int, request: EditRoleRequest, db: Session = Depends(get_
     print(f"🎭 Role updated for user {user_id} to {request.new_role}")
     return {"message": "Role updated successfully"}
 
+
+@app.put("/inspections/{inspection_id}/Edit-Inspection")
+def confirm_inspection(inspection_id: int, request: InspectionConfirmRequest, db: Session = Depends(get_db)):
+    # 1. Check
+    inspection = db.query(models.Inspection).filter(models.Inspection.id == inspection_id).first()
+    
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # 2. Edit
+    inspection.status = request.status
+    inspection.defect_category = request.defect_category
+    
+    db.commit()
+    return {
+        "message": "Data updated and confirmed",
+        "new_status": inspection.status,
+        "new_category": inspection.defect_category
+    }
+
+
+@app.put("/inspections/{inspection_id}/confirm")
+def confirm_only(inspection_id: int, db: Session = Depends(get_db)):
+    inspection = db.query(models.Inspection).filter(models.Inspection.id == inspection_id).first()
+    
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    inspection.is_confirmed = True
+    
+    db.commit()
+    print(f"✅ Inspection {inspection_id} has been confirmed by user.")
+    
+    return {
+        "status": "success",
+        "message": f"Inspection {inspection_id} confirmed",
+        "final_status": inspection.status,
+        "final_category": inspection.defect_category
+    }
 # ==========================================
 # Delete User Endpoint
 # ==========================================
