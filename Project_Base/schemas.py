@@ -2,14 +2,14 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 
-# --- 1. Schemas للمستشعرات (Telemetry) ---
+# --- 1. Schemas for(Telemetry) ---
 class SensorDataBase(BaseModel):
     temp: float
     vibration: float
     current: float
 
 class SensorDataCreate(SensorDataBase):
-    session_id: Optional[int] = None # بيتبعت من الـ ESP أو بيتححدد في السيرفر
+    session_id: Optional[int] = None 
 
 class SensorDataResponse(SensorDataBase):
     id: int
@@ -18,12 +18,13 @@ class SensorDataResponse(SensorDataBase):
     class Config:
         from_attributes = True
 
-# --- 2. Schemas لفحص المنتجات (Inspections) ---
+# --- 2. Schemas for check (Inspections) ---
 class InspectionBase(BaseModel):
     status: str
     defect_category: Optional[str] = None
     confidence: float
     image_path: str
+    is_confirmed: bool
 
 class InspectionCreate(InspectionBase):
     session_id: Optional[int] = None
@@ -35,7 +36,7 @@ class InspectionResponse(InspectionBase):
     class Config:
         from_attributes = True
 
-# --- 3. Schemas للعمليات (Sessions) ---
+# --- 3. Schemas for(Sessions) ---
 class SystemSessionBase(BaseModel):
     operator_id: int
 
@@ -46,7 +47,6 @@ class SystemSessionResponse(SystemSessionBase):
     id: int
     start_time: datetime
     end_time: Optional[datetime] = None
-    # ده بيخلينا نسحب كل الفحوصات اللي تمت في الجلسة دي بمرة واحدة
     inspections: List[InspectionResponse] = []
 
     class Config:
