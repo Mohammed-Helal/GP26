@@ -22,3 +22,20 @@ def move_to_confirmed_dataset(local_image_path, category):
     except Exception as e:
         print(f"⚠️ Error: {e}")
         return None
+    
+def delete_inspection_image(image_path):
+    """حذف الصورة من الهارد ديسك"""
+    try:
+        # تنظيف المسار زي ما عملنا في الـ move
+        clean_path = image_path.replace("Project_Base/", "").lstrip("/")
+        
+        if os.path.exists(clean_path):
+            os.remove(clean_path)
+            print(f"🗑️ Successfully deleted: {clean_path}")
+            return True
+        else:
+            print(f"⚠️ Cannot delete: File not found at {clean_path}")
+            return False
+    except Exception as e:
+        print(f"❌ Error deleting file: {e}")
+        return False

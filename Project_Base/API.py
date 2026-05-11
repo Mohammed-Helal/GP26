@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from paho.mqtt.enums import CallbackAPIVersion
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from utils import move_to_confirmed_dataset
+from utils import move_to_confirmed_dataset, delete_inspection_image
 
 import models, schemas
 from database import engine, get_db, SessionLocal
@@ -224,6 +224,25 @@ def confirm_only(inspection_id: int, db: Session = Depends(get_db)):
         "message": f"Inspection {inspection_id} confirmed",
         "final_status": inspection.status,
         "final_category": inspection.defect_category
+    }
+
+@app.put("/inspections/{inspection_id}/delete_image")
+def reject_and_delete(inspection_id: int, db: Session = Depends(get_db)):
+    inspection = db.query(models.Inspection).filter(models.Inspection.id == inspection_id).first()
+    
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    if inspection.image_path:
+        delete_inspection_image(inspection.image_path)
+
+    inspection.is_confirmed = True
+    
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Inspection {inspection_id} confirmed and image deleted."
     }
 # ==========================================
 # Delete User Endpoint
