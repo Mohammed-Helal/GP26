@@ -6,8 +6,8 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from utils import move_to_confirmed_dataset, delete_inspection_image
 
-import models, schemas
-from database import engine, get_db, SessionLocal
+import Project_Base.Database.models as models, Project_Base.Database.schemas as schemas
+from Database.base import engine, get_db, SessionLocal
 
 
 # Global Variable

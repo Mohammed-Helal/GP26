@@ -2,7 +2,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database import Base
+from Project_Base.Database.base import Base
 
 # 1. Users Table (Access Control)
 class User(Base):

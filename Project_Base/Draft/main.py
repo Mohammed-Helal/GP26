@@ -9,8 +9,8 @@ from paho.mqtt.enums import CallbackAPIVersion # استيراد لتحديد إ�
 from datetime import datetime
 
 # Import our custom modules
-import models
-import schemas
+import Project_Base.Database.models as models
+import Project_Base.Database.schemas as schemas
 from database import engine, get_db, SessionLocal
 
 # --- PLC Modbus Configuration ---
