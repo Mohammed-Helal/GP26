@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.applications.efficientnet import preprocess_input
 
-import Project_Base.Database.models as models
+import Database.models as models
 from Database.base import SessionLocal
 
 # ==========================================
