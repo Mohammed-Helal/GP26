@@ -17,7 +17,7 @@ current_operator_id = None
 # ==========================================
 # FastAPI
 # ==========================================
-app = FastAPI(title="HELAL")
+app = FastAPI(title="Nexus")
 
 # ✅ Add CORS
 app.add_middleware(
