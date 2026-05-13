@@ -24,7 +24,7 @@ os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
 PLC_IP = "192.168.1.200"
 PLC_PORT = 502
 # MODEL_PATH = "Project_Base/banana_classifier_final"
-MODEL_PATH_Tensor = r"Project_Base/bottle_model.h5"
+MODEL_PATH_Tensor = r"Project_Base/CV_Models/bottle_model.h5"
 CLASS_NAMES = ['Broken', 'Good', 'Label', 'Scratch']  
 
 OUTPUT_DIR = "Project_Base/Images"

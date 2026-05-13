@@ -24,9 +24,7 @@ def move_to_confirmed_dataset(local_image_path, category):
         return None
     
 def delete_inspection_image(image_path):
-    """حذف الصورة من الهارد ديسك"""
     try:
-        # تنظيف المسار زي ما عملنا في الـ move
         clean_path = image_path.replace("Project_Base/", "").lstrip("/")
         
         if os.path.exists(clean_path):
