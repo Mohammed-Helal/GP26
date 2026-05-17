@@ -129,7 +129,7 @@ class CameraStream:
     This prevents the AI and network delays from freezing the video feed.
     """
     def __init__(self):
-        self.stream = cv2.VideoCapture(0)
+        self.stream = cv2.VideoCapture(1)
         (self.grabbed, self.frame) = self.stream.read()
         self.stopped = False
 

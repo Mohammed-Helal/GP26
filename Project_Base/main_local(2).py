@@ -216,7 +216,7 @@ def run_ai_logic():
         # Trigger logic
         mw10_value = 0
         if plc_connected:
-            res = plc_client.read_holding_registers(10, 1)
+            res = plc_client.read_holding_registers(address=10, count=1)
             if res and not res.isError(): mw10_value = res.registers[0]
 
         if (mw10_value == 1) or (take_photo is not None):
